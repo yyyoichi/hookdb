@@ -32,17 +32,18 @@ func newStore[T any]() store[T] {
 	}
 }
 
-func (s *store[T]) put(k []byte, v T) {
+func (s *store[T]) put(k []byte, v T) int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	i := s.nextI
+	s.nextI++
 	s.vals[i] = v
 	s.keys[i] = k
 	item := &item{k: k, i: i}
 	s.btree.ReplaceOrInsert(item)
 
-	s.nextI++
+	return i
 }
 
 func (s *store[T]) get(k []byte) (T, bool) {
