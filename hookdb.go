@@ -18,7 +18,7 @@ func New() HookDB {
 }
 
 func (b *HookDB) Put(k, v []byte) {
-	innerId := b.v.put(k, v)
+	innerId := b.v.put(NewEntry(k, v))
 	b.callHook(innerId, k)
 }
 
@@ -35,7 +35,7 @@ func (b *HookDB) Delete(k []byte) {
 }
 
 func (b *HookDB) AppendHook(prefix []byte, fn HookHandler) {
-	b.h.put(prefix, fn)
+	b.h.put(NewEntry(prefix, fn))
 }
 
 func (b *HookDB) RemoveHook(prefix []byte) {
@@ -59,5 +59,5 @@ func (b *HookDB) callHook(innerId int64, k []byte) {
 		return true
 	})
 	b.h.mu.RUnlock()
-	b.h.deleteAt(deleteHookIds...)
+	b.h.bdeleteAt(deleteHookIds...)
 }
