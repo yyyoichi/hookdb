@@ -1,69 +1,93 @@
 package hookdb
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestStore(t *testing.T) {
-	var C = 10_000
-	type V = string
-	store := newStore[V]()
-	// add 10_000
-	{
-		var req = make([]Entry[V], C)
-		for i := range C {
-			req[i] = NewEntry([]byte(fmt.Sprintf("key%d", i)), fmt.Sprintf("val%d", i))
-		}
-		store.bput(req...)
+	testSimpleOutput := func(t *testing.T, output output[string], expDel bool) {
+		t.Helper()
+		assert.Equal(t, "key", string(output.key))
+		assert.Equal(t, "val", output.val)
+		assert.NotZero(t, output.i)
+		assert.Equal(t, expDel, output.deleted)
 	}
-	// get
-	{
-		var req = make([][]byte, C)
-		for i := range C {
-			req[i] = []byte(fmt.Sprintf("key%d", i))
-		}
-		var i int
-		for v, found := range store.bget(req...) {
-			assert.True(t, found)
-			assert.Equal(t, fmt.Sprintf("val%d", i), v)
-			i++
-		}
+
+	test := []struct {
+		store                  *store[string]
+		expDeletedItemGetError error
+	}{
+		{newStore[string](), ErrKeyNotFound},
+		{newStore[string](withDownCounter()), ErrKeyNotFound},
+		{newStore[string](withDownCounter(), withTheoryDeleted()), ErrDeleted},
+		{newStore[string](withTheoryDeleted()), ErrDeleted},
 	}
-	// not found
-	{
-		_, found := store.get([]byte("not found"))
-		assert.False(t, found)
-	}
-	// delete
-	{
-		var req = make([][]byte, 0, C/2)
-		for i := 0; i < C; i += 2 {
-			req = append(req, []byte(fmt.Sprintf("key%d", i)))
+	for _, tt := range test {
+		in := input[string]{
+			k: []byte("key"),
+			v: "val",
 		}
-		store.bdelete(req...)
-	}
-	// getAt and deleteAt
-	{
-		var req = make([]int64, 0, C)
-		for i := range store.nextI {
-			_, found := store.getAt(i)
-			if found {
-				req = append(req, i)
-			}
+		output, err := tt.store.put(in)
+		assert.NoError(t, err)
+		testSimpleOutput(t, output, false)
+		output, err = tt.store.get(in)
+		assert.NoError(t, err)
+		testSimpleOutput(t, output, false)
+		output, err = tt.store.delete(in)
+		assert.NoError(t, err)
+		testSimpleOutput(t, output, true)
+		_, err = tt.store.get(in)
+		assert.Equal(t, tt.expDeletedItemGetError, err)
+		// reinput
+		output, err = tt.store.put(in)
+		assert.NoError(t, err)
+		testSimpleOutput(t, output, false)
+		// with i
+		in = input[string]{i: output.i}
+		output, err = tt.store.get(in)
+		assert.NoError(t, err)
+		testSimpleOutput(t, output, false)
+		output, err = tt.store.delete(in)
+		assert.NoError(t, err)
+		testSimpleOutput(t, output, true)
+		_, err = tt.store.get(in)
+		assert.Equal(t, tt.expDeletedItemGetError, err)
+
+		// with Exec
+		in = input[string]{
+			k: []byte("key"),
+			v: "val",
 		}
-		store.bdeleteAt(req...)
-	}
-	// get
-	{
-		var req = make([]int64, C)
-		for i := range C {
-			req[i] = int64(i)
-		}
-		for _, found := range store.bgetAt(req...) {
-			assert.False(t, found)
-		}
+		output, err = tt.store.Exec(tt.store.put, in)
+		assert.NoError(t, err)
+		testSimpleOutput(t, output, false)
+		output, err = tt.store.Exec(tt.store.get, in)
+		assert.NoError(t, err)
+		testSimpleOutput(t, output, false)
+		output, err = tt.store.Exec(tt.store.delete, in)
+		assert.NoError(t, err)
+		testSimpleOutput(t, output, true)
+		_, err = tt.store.Exec(tt.store.get, in)
+		assert.Equal(t, tt.expDeletedItemGetError, err)
+
+		// with batch
+		outputs, errs := tt.store.BatchExec(tt.store.put, in)
+		assert.Len(t, errs, 0)
+		assert.Len(t, outputs, 1)
+		testSimpleOutput(t, outputs[0], false)
+		outputs, errs = tt.store.BatchExec(tt.store.get, in)
+		assert.Len(t, errs, 0)
+		assert.Len(t, outputs, 1)
+		testSimpleOutput(t, outputs[0], false)
+		outputs, errs = tt.store.BatchExec(tt.store.delete, in)
+		assert.Len(t, errs, 0)
+		assert.Len(t, outputs, 1)
+		testSimpleOutput(t, outputs[0], true)
+		outputs, errs = tt.store.BatchExec(tt.store.get, in)
+		assert.Len(t, errs, 1)
+		assert.Len(t, outputs, 0)
+		assert.Equal(t, tt.expDeletedItemGetError, errs[0])
 	}
 }

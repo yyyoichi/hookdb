@@ -2,7 +2,6 @@ package hookdb
 
 import (
 	"bytes"
-	"iter"
 	"sync"
 
 	"github.com/google/btree"
@@ -15,19 +14,34 @@ type (
 		mu       sync.RWMutex
 		vals     map[int64]T
 		keys     map[int64][]byte
+		dels     map[int64]bool
 		btree    *btree.BTreeG[*item]
 	}
+	// bree item
 	item struct {
 		// key
 		k []byte
 		// innerI
 		i int64
-		// delete flag
-		d bool
 	}
+
+	input[T any] struct {
+		k []byte
+		v T
+		i int64
+	}
+
+	output[T any] struct {
+		key     []byte
+		val     T
+		i       int64
+		deleted bool
+	}
+
+	command[T any] func(input[T]) (output[T], error)
 )
 
-func newStore[T any](opts ...storeOptionF) store[T] {
+func newStore[T any](opts ...storeOptionF) *store[T] {
 	var op = &storeOptions{
 		iCounter: upCounter,
 		startI:   1,
@@ -35,7 +49,8 @@ func newStore[T any](opts ...storeOptionF) store[T] {
 	for _, f := range opts {
 		f(op)
 	}
-	return store[T]{
+
+	var store = store[T]{
 		nextI:    op.startI,
 		iCounter: op.iCounter,
 		vals:     map[int64]T{},
@@ -44,179 +59,161 @@ func newStore[T any](opts ...storeOptionF) store[T] {
 			return bytes.Compare(a.k, b.k) == -1
 		}),
 	}
+
+	if op.theoryDeleted {
+		store.dels = map[int64]bool{}
+	}
+
+	return &store
 }
 
-func (s *store[T]) put(e Entry[T]) int64 {
+func (s *store[T]) Exec(cmd command[T], in input[T]) (output[T], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.p(e)
+	return cmd(in)
 }
 
-func (s *store[T]) bput(es ...Entry[T]) iter.Seq[int64] {
-	if len(es) == 0 {
-		return nil
-	}
+func (s *store[T]) BatchExec(cmd command[T], inputs ...input[T]) ([]output[T], []error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var resp = make([]int64, len(es))
-	for p, e := range es {
-		resp[p] = s.p(e)
-	}
-	return func(yield func(int64) bool) {
-		for _, r := range resp {
-			ok := yield(r)
-			if !ok {
-				return
-			}
-		}
-	}
-}
-
-func (s *store[T]) get(k []byte) (T, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.g(k)
-}
-
-func (s *store[T]) bget(ks ...[]byte) iter.Seq2[T, bool] {
-	if len(ks) == 0 {
-		return nil
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var vals, founds = make([]T, len(ks)), make([]bool, len(ks))
-	for p, k := range ks {
-		v, found := s.g(k)
-		vals[p] = v
-		founds[p] = found
-	}
-
-	return func(yield func(T, bool) bool) {
-		for p := range len(ks) {
-			ok := yield(vals[p], founds[p])
-			if !ok {
-				return
-			}
-		}
-	}
-}
-
-func (s *store[T]) getAt(i int64) (T, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.ga(i)
-}
-
-func (s *store[T]) bgetAt(is ...int64) iter.Seq2[T, bool] {
-	if len(is) == 0 {
-		return nil
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var vals, founds = make([]T, len(is)), make([]bool, len(is))
-	for p, i := range is {
-		v, found := s.ga(i)
-		if !found {
+	outs, errs := make([]output[T], 0, len(inputs)), make([]error, 0, len(inputs))
+	for _, in := range inputs {
+		output, err := cmd(in)
+		if err != nil {
+			errs = append(errs, err)
 			continue
 		}
-		vals[p] = v
-		founds[p] = true
+		outs = append(outs, output)
 	}
-	return func(yield func(T, bool) bool) {
-		for p := range len(is) {
-			ok := yield(vals[p], founds[p])
-			if !ok {
-				return
-			}
-		}
-	}
+	return outs, errs
 }
 
-func (s *store[T]) delete(k []byte) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.d(k)
-}
-
-func (s *store[T]) bdelete(ks ...[]byte) {
-	if len(ks) == 0 {
-		return
+func (s *store[T]) put(in input[T]) (o output[T], err error) {
+	if len(in.k) == 0 {
+		return o, ErrEmptyEntry
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	for _, k := range ks {
-		s.d(k)
-	}
-}
-
-func (s *store[T]) deleteAt(i int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.da(i)
-}
-
-func (s *store[T]) bdeleteAt(is ...int64) {
-	if len(is) == 0 {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for _, i := range is {
-		s.da(i)
-	}
-}
-
-func (s *store[T]) p(e Entry[T]) int64 {
 	i := s.nextI
-	s.keys[i] = e.k
-	s.vals[i] = e.v
-	item := &item{k: e.k, i: i}
-	s.btree.ReplaceOrInsert(item)
+	s.keys[i] = in.k
+	s.vals[i] = in.v
+	if s.dels != nil {
+		s.dels[i] = false
+	}
+	_, _ = s.btree.ReplaceOrInsert(&item{k: in.k, i: i})
 	s.iCounter(&s.nextI)
-	return i
+
+	o.key = in.k
+	o.val = in.v
+	o.i = i
+	o.deleted = false
+	return o, nil
 }
 
-func (s *store[T]) g(k []byte) (v T, found bool) {
-	item, found := s.btree.Get(&item{k: k})
-	if !found {
+func (s *store[T]) get(in input[T]) (o output[T], err error) {
+	switch {
+	case in.i != 0:
+		k, found := s.keys[in.i]
+		if !found {
+			err = ErrKeyNotFound
+			break
+		}
+		o.key = k
+		o.i = in.i
+	case len(in.k) != 0:
+		item, found := s.btree.Get(&item{k: in.k})
+		if !found {
+			err = ErrKeyNotFound
+			break
+		}
+		o.key = in.k
+		o.i = item.i
+	default:
+		err = ErrEmptyEntry
+	}
+	if err != nil {
 		return
 	}
-	v = s.vals[item.i]
-	found = true
+	o.val = s.vals[o.i]
+	if s.dels != nil {
+		o.deleted = s.dels[o.i]
+	}
+	if o.deleted {
+		return o, ErrDeleted
+	}
 	return
 }
 
-func (s *store[T]) d(k []byte) {
-	item, found := s.btree.Delete(&item{k: k})
-	if !found {
-		return
+func (s *store[T]) delete(in input[T]) (o output[T], err error) {
+	if s.dels == nil {
+		return s.physicalDelete(in)
 	}
-	delete(s.vals, item.i)
-	delete(s.keys, item.i)
+	return s.theoryDeleted(in)
 }
 
-func (s *store[T]) ga(i int64) (v T, found bool) {
-	v, found = s.vals[i]
+func (s *store[T]) physicalDelete(in input[T]) (o output[T], err error) {
+	switch {
+	case in.i != 0:
+		k, found := s.keys[in.i]
+		if !found {
+			return o, ErrKeyNotFound
+		}
+		o.key = k
+		o.i = in.i
+	case len(in.k) != 0:
+		item, found := s.btree.Delete(&item{k: in.k})
+		if !found {
+			err = ErrKeyNotFound
+		}
+		o.key = in.k
+		o.i = item.i
+	default:
+		err = ErrEmptyEntry
+	}
+	if err != nil {
+		return o, err
+	}
+	o.deleted = true
+	o.val = s.vals[o.i]
+	delete(s.vals, o.i)
+	delete(s.keys, o.i)
 	return
 }
 
-func (s *store[T]) da(i int64) {
-	k, found := s.keys[i]
-	if !found {
-		return
+func (s *store[T]) theoryDeleted(in input[T]) (o output[T], err error) {
+	switch {
+	case in.i != 0:
+		k, found := s.keys[in.i]
+		if !found {
+			return o, ErrKeyNotFound
+		}
+		o.key = k
+		o.i = in.i
+	case len(in.k) != 0:
+		item, found := s.btree.Get(&item{k: in.k})
+		if !found {
+			err = ErrKeyNotFound
+		}
+		o.key = in.k
+		o.i = item.i
+	default:
+		err = ErrEmptyEntry
 	}
-	delete(s.vals, i)
-	delete(s.keys, i)
-	_, _ = s.btree.Delete(&item{k: k})
+	if err != nil {
+		return o, err
+	}
+	o.val = s.vals[o.i]
+	o.deleted = true
+	// delete
+	s.dels[o.i] = true
+	return
 }
 
 type (
 	iCounter     func(*int64)
 	storeOptions struct {
-		iCounter iCounter
-		startI   int64
+		iCounter      iCounter
+		startI        int64
+		theoryDeleted bool
 	}
 	storeOptionF func(*storeOptions)
 )
@@ -228,9 +225,14 @@ var (
 
 var (
 	withDownCounter = func() storeOptionF {
-		return func(op *storeOptions) {
-			op.startI = -1
-			op.iCounter = downCounter
+		return func(so *storeOptions) {
+			so.startI = -1
+			so.iCounter = downCounter
+		}
+	}
+	withTheoryDeleted = func() storeOptionF {
+		return func(so *storeOptions) {
+			so.theoryDeleted = true
 		}
 	}
 )
