@@ -16,13 +16,10 @@ func TestStore(t *testing.T) {
 	}
 
 	test := []struct {
-		store                  *store[string]
-		expDeletedItemGetError error
+		store *store[string]
 	}{
-		{newStore[string](), ErrKeyNotFound},
-		{newStore[string](withDownCounter()), ErrKeyNotFound},
-		{newStore[string](withDownCounter(), withTheoryDeleted()), ErrDeleted},
-		{newStore[string](withTheoryDeleted()), ErrDeleted},
+		{newStore[string]()},
+		{newStore[string](withDownCounter())},
 	}
 	for _, tt := range test {
 		in := input[string]{
@@ -39,7 +36,7 @@ func TestStore(t *testing.T) {
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, true)
 		_, err = tt.store.get(in)
-		assert.Equal(t, tt.expDeletedItemGetError, err)
+		assert.Equal(t, ErrKeyNotFound, err)
 		// reinput
 		output, err = tt.store.put(in)
 		assert.NoError(t, err)
@@ -53,7 +50,7 @@ func TestStore(t *testing.T) {
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, true)
 		_, err = tt.store.get(in)
-		assert.Equal(t, tt.expDeletedItemGetError, err)
+		assert.Equal(t, ErrKeyNotFound, err)
 
 		// with Exec
 		in = input[string]{
@@ -70,7 +67,7 @@ func TestStore(t *testing.T) {
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, true)
 		_, err = tt.store.Exec(tt.store.get, in)
-		assert.Equal(t, tt.expDeletedItemGetError, err)
+		assert.Equal(t, ErrKeyNotFound, err)
 
 		// with batch
 		outputs, errs := tt.store.BatchExec(tt.store.put, in)
@@ -88,6 +85,6 @@ func TestStore(t *testing.T) {
 		outputs, errs = tt.store.BatchExec(tt.store.get, in)
 		assert.Len(t, errs, 1)
 		assert.Len(t, outputs, 0)
-		assert.Equal(t, tt.expDeletedItemGetError, errs[0])
+		assert.Equal(t, ErrKeyNotFound, errs[0])
 	}
 }

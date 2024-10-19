@@ -14,7 +14,6 @@ type (
 		mu       sync.RWMutex
 		vals     map[int64]T
 		keys     map[int64][]byte
-		dels     map[int64]bool
 		btree    *btree.BTreeG[*item]
 	}
 	// bree item
@@ -59,11 +58,6 @@ func newStore[T any](opts ...storeOptionF) *store[T] {
 			return bytes.Compare(a.k, b.k) == -1
 		}),
 	}
-
-	if op.theoryDeleted {
-		store.dels = map[int64]bool{}
-	}
-
 	return &store
 }
 
@@ -96,9 +90,6 @@ func (s *store[T]) put(in input[T]) (o output[T], err error) {
 	i := s.nextI
 	s.keys[i] = in.k
 	s.vals[i] = in.v
-	if s.dels != nil {
-		s.dels[i] = false
-	}
 	_, _ = s.btree.ReplaceOrInsert(&item{k: in.k, i: i})
 	s.iCounter(&s.nextI)
 
@@ -134,23 +125,10 @@ func (s *store[T]) get(in input[T]) (o output[T], err error) {
 		return
 	}
 	o.val = s.vals[o.i]
-	if s.dels != nil {
-		o.deleted = s.dels[o.i]
-	}
-	if o.deleted {
-		return o, ErrDeleted
-	}
 	return
 }
 
 func (s *store[T]) delete(in input[T]) (o output[T], err error) {
-	if s.dels == nil {
-		return s.physicalDelete(in)
-	}
-	return s.theoryDeleted(in)
-}
-
-func (s *store[T]) physicalDelete(in input[T]) (o output[T], err error) {
 	switch {
 	case in.i != 0:
 		k, found := s.keys[in.i]
@@ -159,6 +137,7 @@ func (s *store[T]) physicalDelete(in input[T]) (o output[T], err error) {
 		}
 		o.key = k
 		o.i = in.i
+		_, _ = s.btree.Delete(&item{k: in.k})
 	case len(in.k) != 0:
 		item, found := s.btree.Delete(&item{k: in.k})
 		if !found {
@@ -179,60 +158,22 @@ func (s *store[T]) physicalDelete(in input[T]) (o output[T], err error) {
 	return
 }
 
-func (s *store[T]) theoryDeleted(in input[T]) (o output[T], err error) {
-	switch {
-	case in.i != 0:
-		k, found := s.keys[in.i]
-		if !found {
-			return o, ErrKeyNotFound
-		}
-		o.key = k
-		o.i = in.i
-	case len(in.k) != 0:
-		item, found := s.btree.Get(&item{k: in.k})
-		if !found {
-			err = ErrKeyNotFound
-		}
-		o.key = in.k
-		o.i = item.i
-	default:
-		err = ErrEmptyEntry
-	}
-	if err != nil {
-		return o, err
-	}
-	o.val = s.vals[o.i]
-	o.deleted = true
-	// delete
-	s.dels[o.i] = true
-	return
-}
-
 type (
 	iCounter     func(*int64)
 	storeOptions struct {
-		iCounter      iCounter
-		startI        int64
-		theoryDeleted bool
+		iCounter iCounter
+		startI   int64
 	}
 	storeOptionF func(*storeOptions)
 )
 
 var (
-	upCounter   iCounter = func(i *int64) { *i += 1 }
-	downCounter iCounter = func(i *int64) { *i -= 1 }
-)
-
-var (
-	withDownCounter = func() storeOptionF {
+	upCounter       iCounter = func(i *int64) { *i += 1 }
+	downCounter     iCounter = func(i *int64) { *i -= 1 }
+	withDownCounter          = func() storeOptionF {
 		return func(so *storeOptions) {
 			so.startI = -1
 			so.iCounter = downCounter
-		}
-	}
-	withTheoryDeleted = func() storeOptionF {
-		return func(so *storeOptions) {
-			so.theoryDeleted = true
 		}
 	}
 )
