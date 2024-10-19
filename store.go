@@ -10,23 +10,36 @@ import (
 
 type (
 	store[T any] struct {
-		nextI int64
-		mu    sync.RWMutex
-		vals  map[int64]T
-		keys  map[int64][]byte
-		btree *btree.BTreeG[*item]
+		nextI    int64
+		iCounter iCounter
+		mu       sync.RWMutex
+		vals     map[int64]T
+		keys     map[int64][]byte
+		btree    *btree.BTreeG[*item]
 	}
 	item struct {
+		// key
 		k []byte
+		// innerI
 		i int64
+		// delete flag
+		d bool
 	}
 )
 
-func newStore[T any]() store[T] {
+func newStore[T any](opts ...storeOptionF) store[T] {
+	var op = &storeOptions{
+		iCounter: upCounter,
+		startI:   1,
+	}
+	for _, f := range opts {
+		f(op)
+	}
 	return store[T]{
-		nextI: 1,
-		vals:  map[int64]T{},
-		keys:  map[int64][]byte{},
+		nextI:    op.startI,
+		iCounter: op.iCounter,
+		vals:     map[int64]T{},
+		keys:     map[int64][]byte{},
 		btree: btree.NewG(2, func(a, b *item) bool {
 			return bytes.Compare(a.k, b.k) == -1
 		}),
@@ -157,11 +170,11 @@ func (s *store[T]) bdeleteAt(is ...int64) {
 
 func (s *store[T]) p(e Entry[T]) int64 {
 	i := s.nextI
-	s.nextI++
 	s.keys[i] = e.k
 	s.vals[i] = e.v
 	item := &item{k: e.k, i: i}
 	s.btree.ReplaceOrInsert(item)
+	s.iCounter(&s.nextI)
 	return i
 }
 
@@ -198,3 +211,26 @@ func (s *store[T]) da(i int64) {
 	delete(s.keys, i)
 	_, _ = s.btree.Delete(&item{k: k})
 }
+
+type (
+	iCounter     func(*int64)
+	storeOptions struct {
+		iCounter iCounter
+		startI   int64
+	}
+	storeOptionF func(*storeOptions)
+)
+
+var (
+	upCounter   iCounter = func(i *int64) { *i += 1 }
+	downCounter iCounter = func(i *int64) { *i -= 1 }
+)
+
+var (
+	withDownCounter = func() storeOptionF {
+		return func(op *storeOptions) {
+			op.startI = -1
+			op.iCounter = downCounter
+		}
+	}
+)
