@@ -93,6 +93,10 @@ func (s *txnStore[T]) get(in input[T]) (o output[T], err error) {
 	default:
 		// get with key, btree is cloned
 		o, err = s.store.get(in)
+		// found in origin store
+		if 0 < o.i {
+			o, err = s.origin.get(in)
+		}
 	}
 	if err != nil {
 		return o, err
