@@ -55,17 +55,17 @@ func (x *Txn) Rollback() error {
 		x.closed = true
 		x.mu.Unlock()
 	}()
-	x.v.btree = x.v.origin.btree.Clone()
+	x.v.store.btree = x.v.origin.btree.Clone()
 	x.v.dels = make(map[int64]bool)
-	x.h.btree = x.h.origin.btree.Clone()
+	x.h.store.btree = x.h.origin.btree.Clone()
 	x.h.dels = make(map[int64]bool)
 	return nil
 }
 
 type txnStore[T any] struct {
 	origin *store[T]
-	*store[T]
-	dels map[int64]bool
+	store  *store[T]
+	dels   map[int64]bool
 }
 
 func newTxnStore[T any](origin *store[T]) *txnStore[T] {
@@ -124,7 +124,7 @@ func (s *txnStore[T]) delete(in input[T]) (o output[T], err error) {
 		o.i = in.i
 
 	case len(in.k) != 0:
-		item, found := s.btree.Get(&item{k: in.k})
+		item, found := s.store.btree.Get(&item{k: in.k})
 		if !found {
 			err = ErrKeyNotFound
 		}
@@ -137,9 +137,16 @@ func (s *txnStore[T]) delete(in input[T]) (o output[T], err error) {
 	if err != nil {
 		return o, err
 	}
-	o.val = s.vals[o.i]
+
+	switch {
+	case 0 < o.i:
+		o.val = s.origin.vals[o.i]
+	case o.i < 0:
+		o.val = s.store.vals[o.i]
+	}
 	o.deleted = true
 	// delete
+	o, _ = s.store.put(input[T]{k: o.key, v: o.val})
 	s.dels[o.i] = true
 	return o, err
 }
@@ -157,8 +164,8 @@ func (s *txnStore[T]) rollback() error {
 }
 
 func (s *txnStore[T]) merge(outputs []output[T]) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
 
 	var success int64
 	for _, o := range outputs {
@@ -201,15 +208,15 @@ func (s *txnStore[T]) reverse(outputs []output[T]) (int64, error) {
 
 // scan by i asc
 func (s *txnStore[T]) scan() []output[T] {
-	outputs := make([]output[T], 0, s.nextI*-1)
+	outputs := make([]output[T], 0, s.store.nextI*-1)
 	var i int64 = -1
 	for {
-		if i == s.nextI {
+		if i == s.store.nextI {
 			break
 		}
 		o := output[T]{
-			key:     s.keys[i],
-			val:     s.vals[i],
+			key:     s.store.keys[i],
+			val:     s.store.vals[i],
 			i:       i,
 			deleted: s.dels[i],
 		}
