@@ -165,9 +165,9 @@ func (s *txnStore[T]) merge(outputs []output[T]) (int64, error) {
 		var err error
 		switch o.deleted {
 		case true:
-			_, err = s.delete(input[T]{k: o.key})
+			_, err = s.origin.delete(input[T]{k: o.key})
 		case false:
-			_, err = s.put(input[T]{k: o.key, v: o.val})
+			_, err = s.origin.put(input[T]{k: o.key, v: o.val})
 		}
 		if err != nil && errors.Is(err, ErrKeyNotFound) {
 			err = fmt.Errorf("rollback: unexpected error: cannot merge [%v] : %w", o, err)
@@ -187,9 +187,9 @@ func (s *txnStore[T]) reverse(outputs []output[T]) (int64, error) {
 		var err error
 		switch o.deleted {
 		case false:
-			_, err = s.delete(input[T]{k: o.key})
+			_, err = s.origin.delete(input[T]{k: o.key})
 		case true:
-			_, err = s.put(input[T]{k: o.key, v: o.val})
+			_, err = s.origin.put(input[T]{k: o.key, v: o.val})
 		}
 		if err != nil && errors.Is(err, ErrKeyNotFound) {
 			return success, err
