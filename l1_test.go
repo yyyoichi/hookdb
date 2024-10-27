@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestStore(t *testing.T) {
+func TestL1Store(t *testing.T) {
 	testSimpleOutput := func(t *testing.T, output output[string], expDel bool) {
 		t.Helper()
 		assert.Equal(t, "key", string(output.key))
@@ -16,40 +16,40 @@ func TestStore(t *testing.T) {
 	}
 
 	test := []struct {
-		store *store[string]
+		l1BaseStore *l1BaseStore[string]
 	}{
-		{newStore[string]()},
-		{newStore[string](withDownCounter())},
+		{newL1Store[string]()},
+		{newL1Store[string](withDownCounter())},
 	}
 	for _, tt := range test {
 		in := input[string]{
 			k: []byte("key"),
 			v: "val",
 		}
-		output, err := tt.store.put(in)
+		output, err := tt.l1BaseStore.put(in)
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, false)
-		output, err = tt.store.get(in)
+		output, err = tt.l1BaseStore.get(in)
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, false)
-		output, err = tt.store.delete(in)
+		output, err = tt.l1BaseStore.delete(in)
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, true)
-		_, err = tt.store.get(in)
+		_, err = tt.l1BaseStore.get(in)
 		assert.Equal(t, ErrKeyNotFound, err)
 		// reinput
-		output, err = tt.store.put(in)
+		output, err = tt.l1BaseStore.put(in)
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, false)
 		// with i
 		in = input[string]{i: output.i}
-		output, err = tt.store.get(in)
+		output, err = tt.l1BaseStore.get(in)
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, false)
-		output, err = tt.store.delete(in)
+		output, err = tt.l1BaseStore.delete(in)
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, true)
-		_, err = tt.store.get(in)
+		_, err = tt.l1BaseStore.get(in)
 		assert.Equal(t, ErrKeyNotFound, err)
 
 		// with Exec
@@ -57,34 +57,58 @@ func TestStore(t *testing.T) {
 			k: []byte("key"),
 			v: "val",
 		}
-		output, err = tt.store.Exec(tt.store.put, in)
+		output, err = tt.l1BaseStore.Exec(tt.l1BaseStore.put, in)
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, false)
-		output, err = tt.store.Exec(tt.store.get, in)
+		output, err = tt.l1BaseStore.Exec(tt.l1BaseStore.get, in)
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, false)
-		output, err = tt.store.Exec(tt.store.delete, in)
+		output, err = tt.l1BaseStore.Exec(tt.l1BaseStore.delete, in)
 		assert.NoError(t, err)
 		testSimpleOutput(t, output, true)
-		_, err = tt.store.Exec(tt.store.get, in)
+		_, err = tt.l1BaseStore.Exec(tt.l1BaseStore.get, in)
 		assert.Equal(t, ErrKeyNotFound, err)
 
 		// with batch
-		outputs, errs := tt.store.BatchExec(tt.store.put, in)
+		outputs, errs := tt.l1BaseStore.BatchExec(tt.l1BaseStore.put, in)
 		assert.Len(t, errs, 0)
 		assert.Len(t, outputs, 1)
 		testSimpleOutput(t, outputs[0], false)
-		outputs, errs = tt.store.BatchExec(tt.store.get, in)
+		outputs, errs = tt.l1BaseStore.BatchExec(tt.l1BaseStore.get, in)
 		assert.Len(t, errs, 0)
 		assert.Len(t, outputs, 1)
 		testSimpleOutput(t, outputs[0], false)
-		outputs, errs = tt.store.BatchExec(tt.store.delete, in)
+		outputs, errs = tt.l1BaseStore.BatchExec(tt.l1BaseStore.delete, in)
 		assert.Len(t, errs, 0)
 		assert.Len(t, outputs, 1)
 		testSimpleOutput(t, outputs[0], true)
-		outputs, errs = tt.store.BatchExec(tt.store.get, in)
+		outputs, errs = tt.l1BaseStore.BatchExec(tt.l1BaseStore.get, in)
 		assert.Len(t, errs, 1)
 		assert.Len(t, outputs, 0)
 		assert.Equal(t, ErrKeyNotFound, errs[0])
 	}
+}
+
+func TestL1TxnStore(t *testing.T) {
+	origin := newL1Store[string]()
+	txn := newL1TxnStore(origin)
+
+	output, err := txn.put(input[string]{k: []byte("key"), v: "val"})
+	assert.NoError(t, err)
+	assert.Equal(t, "val", output.val)
+
+	output, err = txn.get(input[string]{k: []byte("key")})
+	assert.NoError(t, err)
+	assert.Equal(t, "val", output.val)
+	assert.False(t, output.deleted)
+
+	output, err = txn.delete(input[string]{k: []byte("key")})
+	assert.NoError(t, err)
+	assert.Equal(t, "val", output.val)
+	assert.True(t, output.deleted)
+
+	output, err = txn.get(input[string]{k: []byte("key")})
+	assert.NoError(t, err)
+	assert.Equal(t, "val", output.val)
+	assert.True(t, output.deleted)
 }
