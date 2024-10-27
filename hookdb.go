@@ -1,45 +1,116 @@
 package hookdb
 
-import "bytes"
+import (
+	"bytes"
+	"context"
+	"sync"
+)
 
 // in handler, cannot appned hook
 type HookHandler func(innerId int64) (removeHook bool)
 
 type HookDB struct {
-	v store[[]byte]
-	h store[HookHandler]
+	v  *store[[]byte]
+	h  *store[HookHandler]
+	mu *sync.RWMutex
 }
 
-func New() HookDB {
-	return HookDB{
-		v: newStore[[]byte](),
-		h: newStore[HookHandler](),
+func New() *HookDB {
+	var mu sync.RWMutex
+	return &HookDB{
+		v:  newStore[[]byte](),
+		h:  newStore[HookHandler](),
+		mu: &mu,
 	}
 }
 
-func (b *HookDB) Put(k, v []byte) {
-	innerId := b.v.put(NewEntry(k, v))
-	b.callHook(innerId, k)
+func (b *HookDB) WithTransaction(ctx context.Context) *Txn {
+	return newTxn(ctx, b)
 }
 
-func (b *HookDB) Get(k []byte) ([]byte, bool) {
-	return b.v.get(k)
+func (b *HookDB) Commit(ctx context.Context) error {
+	if txn, ok := (ctx).(*Txn); ok {
+		return txn.Commit()
+	}
+	return nil
 }
 
-func (b *HookDB) GetAt(innerId int64) ([]byte, bool) {
-	return b.v.getAt(innerId)
+func (b *HookDB) Put(ctx context.Context, k, v []byte) error {
+	in := input[[]byte]{k: k, v: v}
+	if txn, ok := ctx.(*Txn); ok {
+		_, err := txn.v.Exec(txn.v.put, in)
+		return err
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, err := b.v.Exec(b.v.put, in)
+	return err
 }
 
-func (b *HookDB) Delete(k []byte) {
-	b.v.delete(k)
+func (b *HookDB) Get(ctx context.Context, k []byte) ([]byte, error) {
+	in := input[[]byte]{k: k}
+	if txn, ok := ctx.(*Txn); ok {
+		o, err := txn.v.Exec(txn.v.put, in)
+		return o.val, err
+	}
+
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	o, err := b.v.Exec(b.v.get, in)
+	return o.val, err
 }
 
-func (b *HookDB) AppendHook(prefix []byte, fn HookHandler) {
-	b.h.put(NewEntry(prefix, fn))
+func (b *HookDB) GetAt(ctx context.Context, innerId int64) ([]byte, error) {
+	in := input[[]byte]{i: innerId}
+	if txn, ok := ctx.(*Txn); ok {
+		o, err := txn.v.Exec(txn.v.put, in)
+		return o.val, err
+	}
+
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	o, err := b.v.Exec(b.v.get, in)
+	return o.val, err
 }
 
-func (b *HookDB) RemoveHook(prefix []byte) {
-	b.h.delete(prefix)
+func (b *HookDB) Delete(ctx context.Context, k []byte) ([]byte, error) {
+	in := input[[]byte]{k: k}
+	if txn, ok := ctx.(*Txn); ok {
+		o, err := txn.v.Exec(txn.v.put, in)
+		return o.val, err
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	o, err := b.v.Exec(b.v.delete, in)
+	return o.val, err
+}
+
+func (b *HookDB) AppendHook(ctx context.Context, prefix []byte, fn HookHandler) error {
+	in := input[HookHandler]{k: prefix, v: fn}
+	if txn, ok := ctx.(*Txn); ok {
+		_, err := txn.h.Exec(txn.h.put, in)
+		return err
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, err := b.h.Exec(b.h.put, in)
+	return err
+}
+
+func (b *HookDB) RemoveHook(ctx context.Context, prefix []byte) error {
+	in := input[HookHandler]{k: prefix}
+	if txn, ok := ctx.(*Txn); ok {
+		_, err := txn.h.Exec(txn.h.delete, in)
+		return err
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, err := b.h.Exec(b.h.delete, in)
+	return err
 }
 
 func (b *HookDB) callHook(innerId int64, k []byte) {

@@ -64,8 +64,8 @@ func (x *Txn) Rollback() error {
 
 type txnStore[T any] struct {
 	origin *store[T]
-	store  *store[T]
-	dels   map[int64]bool
+	*store[T]
+	dels map[int64]bool
 }
 
 func newTxnStore[T any](origin *store[T]) *txnStore[T] {
