@@ -34,6 +34,15 @@ func TestTransaction(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "val-2", string(val))
 
+		var called bool
+		err = db.AppendHook([]byte("abc"), func(k, v []byte) (removeHook bool) {
+			called = true
+			return true
+		})
+		assert.NoError(t, err)
+		err = db.Put([]byte("abcd"), []byte("hoge"))
+		assert.NoError(t, err)
+		assert.True(t, called)
 	})
 
 	t.Run("double write", func(t *testing.T) {

@@ -46,7 +46,24 @@ func (s *l3Store) Put(k, v []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, err := s.l2values.Exec(s.l2values.put, input[[]byte]{k: k, v: v})
-	return err
+	if err != nil {
+		return err
+	}
+	for output, err := range s.l2hooks.FoundPrefix(k) {
+		if err != nil {
+			return err
+		}
+		if output.deleted {
+			continue
+		}
+		if output.val(k, v) {
+			_, err := s.l2hooks.Exec(s.l2hooks.delete, input[HookHandler]{i: output.i})
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *l3Store) Get(k []byte) ([]byte, error) {
