@@ -1,7 +1,7 @@
 package hookdb
 
 // in handler, cannot appned hook
-type HookHandler func(innerId int64) (removeHook bool)
+type HookHandler func(k, v []byte) (removeHook bool)
 
 type db interface {
 	Get(k []byte) ([]byte, error)

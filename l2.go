@@ -1,6 +1,7 @@
 package hookdb
 
 import (
+	"bytes"
 	"context"
 	"iter"
 
@@ -30,6 +31,20 @@ type l2hookStore struct {
 	l1Store[HookHandler]
 }
 
-func (s *l2hookStore) FoundPrefix(k []byte) iter.Seq[output[HookHandler]] {
-	return nil
+func (s *l2hookStore) FoundPrefix(k []byte) iter.Seq2[output[HookHandler], error] {
+	return func(yield func(output[HookHandler], error) bool) {
+		s.Btree().DescendLessOrEqual(&item{k: k}, func(item *item) bool {
+			if item.k[0] != k[0] {
+				return false
+			}
+			if !bytes.HasPrefix(k, item.k) {
+				return true
+			}
+			output, err := s.get(input[HookHandler]{i: item.i})
+			if ok := yield(output, err); !ok {
+				return false
+			}
+			return true
+		})
+	}
 }
