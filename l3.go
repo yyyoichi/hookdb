@@ -6,39 +6,43 @@ import (
 )
 
 type l3Store struct {
-	l2values *l2valueStore
-	l2hooks  *l2hookStore
-	mu       *sync.RWMutex
-
-	// must set in txn
-	parent *sync.RWMutex
-	closed bool
+	l2values    *l2valueStore
+	l2hooks     *l2hookStore
+	mu          *sync.RWMutex
+	putCallback func(k, v []byte) error
 }
 
 func newL3Store() *l3Store {
-	return &l3Store{
+	s := &l3Store{
 		l2values: &l2valueStore{
 			l1Store: newL1Store[[]byte](),
 		},
 		l2hooks: &l2hookStore{
 			l1Store: newL1Store[HookHandler](),
 		},
-		mu:     new(sync.RWMutex),
-		closed: true,
+		mu: new(sync.RWMutex),
 	}
+	s.putCallback = func(k, v []byte) error {
+		return hook(s.l2hooks, k, v)
+	}
+	return s
 }
 
 func (s *l3Store) Transaction() Transaction {
-	return &l3Store{
+	l3 := &l3Store{
 		l2values: &l2valueStore{
 			l1Store: newL1TxnStore(s.l2values.l1Store.(*l1BaseStore[[]byte])),
 		},
 		l2hooks: &l2hookStore{
 			l1Store: newL1TxnStore(s.l2hooks.l1Store.(*l1BaseStore[HookHandler])),
 		},
-		mu:     new(sync.RWMutex),
-		parent: s.mu,
-		closed: false,
+		putCallback: func(k, v []byte) error { return nil },
+		mu:          new(sync.RWMutex),
+	}
+	return &l3TxnStore{
+		l3Store: l3,
+		parent:  s.mu,
+		closed:  false,
 	}
 }
 
@@ -49,21 +53,7 @@ func (s *l3Store) Put(k, v []byte) error {
 	if err != nil {
 		return err
 	}
-	for output, err := range s.l2hooks.FoundPrefix(k) {
-		if err != nil {
-			return err
-		}
-		if output.deleted {
-			continue
-		}
-		if output.val(k, v) {
-			_, err := s.l2hooks.Exec(s.l2hooks.delete, input[HookHandler]{i: output.i})
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return s.putCallback(k, v)
 }
 
 func (s *l3Store) Get(k []byte) ([]byte, error) {
@@ -97,7 +87,14 @@ func (s *l3Store) RemoveHook(prefix []byte) error {
 	return err
 }
 
-func (s *l3Store) Commit() error {
+type l3TxnStore struct {
+	*l3Store
+
+	parent *sync.RWMutex
+	closed bool
+}
+
+func (s *l3TxnStore) Commit() error {
 	if s.closed {
 		return ErrClosedTransaction
 	}
@@ -106,11 +103,21 @@ func (s *l3Store) Commit() error {
 		s.closed = true
 		s.parent.Unlock()
 	}()
-	err := s.l2values.Commit()
+	outputs, err := s.l2values.Commit()
 	if err != nil {
 		return err
 	}
-	err = s.l2hooks.Commit()
+	for _, o := range outputs {
+		if o.deleted {
+			continue
+		}
+		err := hook(s.l2hooks, o.key, o.val)
+		if err != nil {
+			err = fmt.Errorf("%w: %w", err, s.l2values.Rollback())
+			return err
+		}
+	}
+	_, err = s.l2hooks.Commit()
 	if err != nil {
 		err = fmt.Errorf("%w: %w", err, s.l2values.Rollback())
 		return err
@@ -118,7 +125,7 @@ func (s *l3Store) Commit() error {
 	return nil
 }
 
-func (s *l3Store) Rollback() error {
+func (s *l3TxnStore) Rollback() error {
 	if s.closed {
 		return ErrClosedTransaction
 	}
@@ -127,5 +134,23 @@ func (s *l3Store) Rollback() error {
 		s.closed = true
 		s.parent.Unlock()
 	}()
+	return nil
+}
+
+func hook(l2 *l2hookStore, k, v []byte) error {
+	for output, err := range l2.FoundPrefix(k) {
+		if err != nil {
+			return err
+		}
+		if output.deleted {
+			continue
+		}
+		if output.val(k, v) {
+			_, err := l2.Exec(l2.delete, input[HookHandler]{i: output.i})
+			if err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/google/btree"
@@ -164,8 +165,8 @@ func (s *l1BaseStore[T]) delete(in input[T]) (o output[T], err error) {
 	return
 }
 
-func (s *l1BaseStore[T]) Commit() error {
-	return nil
+func (s *l1BaseStore[T]) Commit() (os []output[T], err error) {
+	return
 }
 
 func (s *l1BaseStore[T]) Rollback() error {
@@ -265,10 +266,28 @@ func (s *l1TxnStore[T]) delete(in input[T]) (o output[T], err error) {
 	return o, err
 }
 
-func (s *l1TxnStore[T]) Commit() error {
+// return inserted uniq outputs ordered by insert-time asc
+func (s *l1TxnStore[T]) Commit() ([]output[T], error) {
 	outputs := s.scan()
 	_, err := s.merge(outputs)
-	return err
+	if err != nil {
+		return nil, err
+	}
+
+	uniq := make(map[string][]byte, len(outputs))
+	results := make([]output[T], 0, len(outputs))
+	for _, o := range slices.Backward(outputs) {
+		strKey := string(o.key)
+		if v, found := uniq[strKey]; found && bytes.Equal(o.key, v) {
+			continue
+		}
+		results = append(results, o)
+		uniq[strKey] = o.key
+	}
+	slices.SortFunc(results, func(a, b output[T]) int {
+		return int(b.i) - int(a.i)
+	})
+	return results, nil
 }
 
 func (s *l1TxnStore[T]) Rollback() error {
@@ -320,7 +339,7 @@ func (s *l1TxnStore[T]) reverse(outputs []output[T]) (int64, error) {
 	return success, nil
 }
 
-// scan by i asc
+// scan by i desc
 func (s *l1TxnStore[T]) scan() []output[T] {
 	outputs := make([]output[T], 0, s.l1BaseStore.nextI*-1)
 	var i int64 = -1

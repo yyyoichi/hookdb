@@ -14,6 +14,16 @@ func TestTransaction(t *testing.T) {
 		err := db.Put([]byte("key-1"), []byte("val-1"))
 		assert.NoError(t, err)
 
+		calledKeys := []string{}
+		err = db.AppendHook([]byte("abc"), func(k, v []byte) (removeHook bool) {
+			calledKeys = append(calledKeys, string(k))
+			return false
+		})
+		assert.NoError(t, err)
+		err = db.Put([]byte("abcd"), []byte("hoge"))
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"abcd"}, calledKeys)
+
 		txn := db.Transaction()
 		val, err := txn.Get([]byte("key-1"))
 		assert.NoError(t, err)
@@ -28,21 +38,23 @@ func TestTransaction(t *testing.T) {
 		_, err = db.Get([]byte("key-2"))
 		assert.ErrorIs(t, err, ErrKeyNotFound)
 
+		err = txn.Put([]byte("abcd!"), []byte("hoge"))
+		assert.NoError(t, err)
+		err = txn.Put([]byte("abcde!"), []byte("hoge"))
+		assert.NoError(t, err)
+		err = txn.Delete([]byte("abcde!"))
+		assert.NoError(t, err)
+		err = txn.Put([]byte("abcdef!"), []byte("hoge"))
+		assert.NoError(t, err)
+		// exp no call
+		assert.Equal(t, []string{"abcd"}, calledKeys)
+
 		err = txn.Commit()
 		assert.NoError(t, err)
 		val, err = db.Get([]byte("key-2"))
 		assert.NoError(t, err)
 		assert.Equal(t, "val-2", string(val))
-
-		var called bool
-		err = db.AppendHook([]byte("abc"), func(k, v []byte) (removeHook bool) {
-			called = true
-			return true
-		})
-		assert.NoError(t, err)
-		err = db.Put([]byte("abcd"), []byte("hoge"))
-		assert.NoError(t, err)
-		assert.True(t, called)
+		assert.Equal(t, []string{"abcd", "abcd!", "abcdef!"}, calledKeys)
 	})
 
 	t.Run("double write", func(t *testing.T) {

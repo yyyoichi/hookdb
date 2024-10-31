@@ -11,7 +11,7 @@ import (
 type l1Store[T any] interface {
 	BatchExec(cmd command[T], inputs ...input[T]) ([]output[T], []error)
 	Btree() *btree.BTreeG[*item]
-	Commit() error
+	Commit() (os []output[T], err error)
 	Exec(cmd command[T], in input[T]) (output[T], error)
 	Rollback() error
 	delete(in input[T]) (o output[T], err error)
