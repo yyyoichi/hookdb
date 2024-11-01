@@ -144,7 +144,7 @@ func (s *l1BaseStore[T]) delete(in input[T]) (o output[T], err error) {
 		}
 		o.key = k
 		o.i = in.i
-		_, _ = s.btree.Delete(&item{k: in.k})
+		_, _ = s.btree.Delete(&item{k: k})
 	case len(in.k) != 0:
 		item, found := s.btree.Delete(&item{k: in.k})
 		if !found {
