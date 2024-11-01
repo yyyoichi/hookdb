@@ -20,38 +20,33 @@ import (
 
 func Example() {
     db := hookdb.New()
-    hooks := map[string]hookdb.HookHandler{
-        "USER": func(innerId int64) (removeHook bool) {
-            _, found := db.GetAt(innerId)
-            if !found {
-                log.Fatal("not found")
-            }
-            fmt.Println("put user!")
-            return true // remove hook
-        },
-        "GAME": func(innerId int64) (removeHook bool) {
-            _, found := db.GetAt(innerId)
-            if !found {
-                log.Fatal("not found")
-            }
-            fmt.Println("put game!")
-            return false // remove no hook
-        },
-    }
-    for prefix, fn := range hooks {
-        db.AppendHook([]byte(prefix), fn)
+    err := db.AppendHook([]byte("GAME100#ACT"), func(k, v []byte) (removeHook bool) {
+        fmt.Printf("%s: %s\n", k, v)
+        return false
+    })
+    if err != nil {
+        log.Fatal(err)
     }
 
-    db.Put([]byte("USER#101"), []byte("Taro"))
-    db.Put([]byte("USER#102"), []byte("Hanako"))
-    db.Put([]byte("GAME#201"), []byte("minesuper"))
-    db.Put([]byte("GAME#202"), []byte("poker"))
-    db.Put([]byte("NONE"), []byte("NONE"))
+    // exp hit  
+    err = db.Put([]byte("GAME100#ACT1"), []byte("PUNCH"))
+    if err != nil {
+        log.Fatal(err)
+    }
+    // exp hit
+    err = db.Put([]byte("GAME100#ACT2"), []byte("KICK"))
+    if err != nil {
+        log.Fatal(err)
+    }
+    // exp not hit
+    err = db.Put([]byte("GAME999#ACT1"), []byte("KICK"))
+    if err != nil {
+        log.Fatal(err)
+    }
 
     // Output:
-    // put user!
-    // put game!
-    // put game!
+    // GAME100#ACT1: PUNCH
+    // GAME100#ACT2: KICK
 }
 
 ```
