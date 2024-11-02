@@ -266,3 +266,44 @@ func ExampleTransaction_AppendHook() {
 	// 'peninsula'
 	// 1. count='1' after commit
 }
+
+func ExampleHookDB_TransactionWithLock() {
+	db := hookdb.New()
+
+	key := []byte("key")
+	txn := db.TransactionWithLock()
+
+	done := make(chan struct{})
+	go func() {
+		// overwrite
+		defer close(done)
+		txn := db.TransactionWithLock()
+		err := txn.Put(key, []byte("new-val"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = txn.Commit()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
+	err := txn.Put(key, []byte("val"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = txn.Commit()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	<-done
+	v, err := db.Get(key)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(string(v))
+
+	// Output:
+	// new-val
+
+}

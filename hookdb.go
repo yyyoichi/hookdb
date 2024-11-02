@@ -14,6 +14,7 @@ type db interface {
 type HookDB interface {
 	db
 	Transaction() Transaction
+	TransactionWithLock() Transaction
 }
 
 type Transaction interface {

@@ -29,6 +29,24 @@ func newL3Store() *l3Store {
 }
 
 func (s *l3Store) Transaction() Transaction {
+	return &l3TxnStore{
+		l3Store: s.withL1Txn(),
+		parent:  s.mu,
+		closed:  false,
+	}
+}
+
+func (s *l3Store) TransactionWithLock() Transaction {
+	s.mu.Lock()
+	return &l3TxnStore{
+		l3Store: s.withL1Txn(),
+		parent:  s.mu,
+		inLock:  true,
+		closed:  false,
+	}
+}
+
+func (s *l3Store) withL1Txn() *l3Store {
 	l3 := &l3Store{
 		l2values: &l2valueStore{
 			l1Store: newL1TxnStore(s.l2values.l1Store.(*l1BaseStore[[]byte])),
@@ -39,11 +57,7 @@ func (s *l3Store) Transaction() Transaction {
 		putCallback: func(k, v []byte) error { return nil },
 		mu:          new(sync.RWMutex),
 	}
-	return &l3TxnStore{
-		l3Store: l3,
-		parent:  s.mu,
-		closed:  false,
-	}
+	return l3
 }
 
 func (s *l3Store) Put(k, v []byte) error {
@@ -90,6 +104,7 @@ func (s *l3Store) RemoveHook(prefix []byte) error {
 type l3TxnStore struct {
 	*l3Store
 
+	inLock bool
 	parent *sync.RWMutex
 	closed bool
 }
@@ -98,7 +113,9 @@ func (s *l3TxnStore) Commit() error {
 	if s.closed {
 		return ErrClosedTransaction
 	}
-	s.parent.Lock()
+	if !s.inLock {
+		s.parent.Lock()
+	}
 	defer func() {
 		s.closed = true
 		s.parent.Unlock()
@@ -129,7 +146,9 @@ func (s *l3TxnStore) Rollback() error {
 	if s.closed {
 		return ErrClosedTransaction
 	}
-	s.parent.Lock()
+	if !s.inLock {
+		s.parent.Lock()
+	}
 	defer func() {
 		s.closed = true
 		s.parent.Unlock()
