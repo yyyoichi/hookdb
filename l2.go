@@ -23,8 +23,19 @@ type l2valueStore struct {
 	l1Store[[]byte]
 }
 
-func (s *l2valueStore) Query(ctx context.Context, k []byte) iter.Seq[output[[]byte]] {
-	return nil
+func (s *l2valueStore) Query(ctx context.Context, k []byte) iter.Seq2[output[[]byte], error] {
+	return func(yield func(output[[]byte], error) bool) {
+		s.Btree().AscendGreaterOrEqual(&item{k: k}, func(item *item) bool {
+			if !bytes.HasPrefix(item.k, k) {
+				return false
+			}
+			output, err := s.get(input[[]byte]{i: item.i})
+			if ok := yield(output, err); !ok {
+				return false
+			}
+			return true
+		})
+	}
 }
 
 type l2hookStore struct {
