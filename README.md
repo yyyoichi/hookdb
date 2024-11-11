@@ -5,7 +5,7 @@ This key-value store is a simple, lightweight, on-memory database. One of its un
 ## Features
 
 - Key-Value Store
-- Put, Delete, Get commands
+- Put, Delete, Get and Query commands
 - HookHandler, Callback function triggered by put key
 - Deletion after HookHandler call
 - Transaction
