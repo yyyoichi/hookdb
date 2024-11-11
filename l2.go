@@ -23,9 +23,38 @@ type l2valueStore struct {
 	l1Store[[]byte]
 }
 
-func (s *l2valueStore) Query(ctx context.Context, k []byte) iter.Seq2[output[[]byte], error] {
+func (s *l2valueStore) Query(ctx context.Context, k []byte, opts ...QueryOption) iter.Seq2[output[[]byte], error] {
+	var qo QueryOptions
+	for _, opt := range opts {
+		opt(&qo)
+	}
+	var (
+		iterate func(btree.ItemIteratorG[*item])
+		skip    func(*item) bool
+	)
+	if qo.Reverse {
+		// increment last byte
+		l := len(k)
+		kk := make([]byte, l)
+		_ = copy(kk, k)
+		kk[l-1] += 1
+		iterate = func(iig btree.ItemIteratorG[*item]) {
+			s.Btree().DescendLessOrEqual(&item{k: kk}, iig)
+		}
+		skip = func(item *item) bool {
+			return bytes.Compare(k, item.k) == -1 && !bytes.HasPrefix(item.k, k)
+		}
+	} else {
+		iterate = func(iig btree.ItemIteratorG[*item]) {
+			s.Btree().AscendGreaterOrEqual(&item{k: k}, iig)
+		}
+		skip = func(*item) bool { return false }
+	}
 	return func(yield func(output[[]byte], error) bool) {
-		s.Btree().AscendGreaterOrEqual(&item{k: k}, func(item *item) bool {
+		iterate(func(item *item) bool {
+			if skip(item) {
+				return true
+			}
 			if !bytes.HasPrefix(item.k, k) {
 				return false
 			}

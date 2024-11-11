@@ -10,27 +10,44 @@ import (
 func TestL2Query(t *testing.T) {
 	l2 := l2valueStore{l1Store: newL1Store[[]byte]()}
 	test := []string{
-		"a", "ab", "abc", "abcd", "abcde", "b", "bc",
+		"a", "ab", "abc", "abcd", "abcde", "abd", "abde", "b", "bc",
 	}
 	for _, tt := range test {
 		_, err := l2.Exec(l2.put, input[[]byte]{k: []byte(tt), v: []byte("val")})
 		assert.NoError(t, err)
 	}
-
-	var count int
-	for output, err := range l2.Query(context.Background(), []byte("abc")) {
-		assert.NoError(t, err)
-		count++
-		switch count {
-		case 1:
-			assert.Equal(t, "abc", string(output.key))
-		case 2:
-			assert.Equal(t, "abcd", string(output.key))
-		case 3:
-			assert.Equal(t, "abcde", string(output.key))
+	t.Run("NoReverse", func(t *testing.T) {
+		var count int
+		for output, err := range l2.Query(context.Background(), []byte("abc")) {
+			assert.NoError(t, err)
+			count++
+			switch count {
+			case 1:
+				assert.Equal(t, "abc", string(output.key))
+			case 2:
+				assert.Equal(t, "abcd", string(output.key))
+			case 3:
+				assert.Equal(t, "abcde", string(output.key))
+			}
 		}
-	}
-	assert.Equal(t, 3, count)
+		assert.Equal(t, 3, count)
+	})
+	t.Run("Reverse", func(t *testing.T) {
+		var count int
+		for output, err := range l2.Query(context.Background(), []byte("abc"), WithReverseQuery()) {
+			assert.NoError(t, err)
+			count++
+			switch count {
+			case 1:
+				assert.Equal(t, "abcde", string(output.key))
+			case 2:
+				assert.Equal(t, "abcd", string(output.key))
+			case 3:
+				assert.Equal(t, "abc", string(output.key))
+			}
+		}
+		assert.Equal(t, 3, count)
+	})
 }
 
 func TestL2HookStore(t *testing.T) {

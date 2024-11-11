@@ -12,7 +12,7 @@ type db interface {
 	Get(k []byte) ([]byte, error)
 	Put(k []byte, v []byte) error
 	Delete(k []byte) error
-	Query(ctx context.Context, k []byte) iter.Seq2[[]byte, error]
+	Query(ctx context.Context, k []byte, opts ...QueryOption) iter.Seq2[[]byte, error]
 	AppendHook(prefix []byte, fn HookHandler) error
 	RemoveHook(prefix []byte) error
 }

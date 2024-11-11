@@ -89,11 +89,11 @@ func (s *l3Store) Delete(k []byte) error {
 	return err
 }
 
-func (s *l3Store) Query(ctx context.Context, k []byte) iter.Seq2[[]byte, error] {
+func (s *l3Store) Query(ctx context.Context, k []byte, opts ...QueryOption) iter.Seq2[[]byte, error] {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return func(yield func([]byte, error) bool) {
-		for output, err := range s.l2values.Query(ctx, k) {
+		for output, err := range s.l2values.Query(ctx, k, opts...) {
 			if ok := yield(output.val, err); !ok {
 				return
 			}
