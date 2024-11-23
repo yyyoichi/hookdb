@@ -26,7 +26,7 @@ type l2valueStore struct {
 func (s *l2valueStore) Query(ctx context.Context, k []byte, opts ...QueryOption) iter.Seq2[output[[]byte], error] {
 	var qo QueryOptions
 	for _, opt := range opts {
-		opt(&qo)
+		_ = opt(&qo)
 	}
 	var (
 		iterate func(btree.ItemIteratorG[*item])
