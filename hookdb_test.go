@@ -39,7 +39,7 @@ func Example() {
 	// car: 3t
 }
 
-func ExampleHookDB_Put() {
+func ExampleDB_Put() {
 	db := hookdb.New()
 	err := db.Put([]byte("apple"), []byte("10kg"))
 	if err != nil {
@@ -63,7 +63,7 @@ func ExampleHookDB_Put() {
 	// 8kg
 }
 
-func ExampleHookDB_Get() {
+func ExampleDB_Get() {
 	db := hookdb.New()
 	err := db.Put([]byte("town"), []byte("Yokohama"))
 	if err != nil {
@@ -86,7 +86,7 @@ func ExampleHookDB_Get() {
 	// Yokohama
 }
 
-func ExampleHookDB_Delete() {
+func ExampleDB_Delete() {
 	db := hookdb.New()
 	err := db.Put([]byte("town"), []byte("Yokohama"))
 	if err != nil {
@@ -111,7 +111,7 @@ func ExampleHookDB_Delete() {
 	//
 }
 
-func ExampleHookDB_AppendHook() {
+func ExampleDB_AppendHook() {
 	db := hookdb.New()
 	err := db.AppendHook([]byte("GAME100#ACT"), func(k, v []byte) (removeHook bool) {
 		fmt.Printf("%s..ACTION '%s'!\n", k, v)
@@ -142,7 +142,7 @@ func ExampleHookDB_AppendHook() {
 	// GAME100#ACT3..ACTION 'GUARD'!
 }
 
-func ExampleHookDB_AppendHook_removal() {
+func ExampleDB_AppendHook_removal() {
 	db := hookdb.New()
 	err := db.AppendHook([]byte("SHOP200#ORDER"), func(k, v []byte) (removeHook bool) {
 		fmt.Printf("%s..ORDER '%s'!\n", k, v)
@@ -165,7 +165,7 @@ func ExampleHookDB_AppendHook_removal() {
 	// SHOP200#ORDER1..ORDER 'SHOES'!
 }
 
-func ExampleTransaction() {
+func ExampleHookDB_Transaction() {
 	db := hookdb.New()
 	err := db.Put([]byte("color1"), []byte("red"))
 	if err != nil {
@@ -217,7 +217,7 @@ func ExampleTransaction() {
 	// get color2 from db after commit: 'blue'
 }
 
-func ExampleTransaction_AppendHook() {
+func ExampleHookDB_AppendHook_withTransaction() {
 	db := hookdb.New()
 
 	var count int

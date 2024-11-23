@@ -30,7 +30,7 @@ func newL3Store() *l3Store {
 	return s
 }
 
-func (s *l3Store) Transaction() Transaction {
+func (s *l3Store) Transaction() *l3TxnStore {
 	return &l3TxnStore{
 		l3Store: s.withL1Txn(),
 		parent:  s.mu,
@@ -38,7 +38,7 @@ func (s *l3Store) Transaction() Transaction {
 	}
 }
 
-func (s *l3Store) TransactionWithLock() Transaction {
+func (s *l3Store) TransactionWithLock() *l3TxnStore {
 	s.mu.Lock()
 	return &l3TxnStore{
 		l3Store: s.withL1Txn(),
