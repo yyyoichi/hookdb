@@ -25,43 +25,51 @@ go get github.com/yyyoichi/hookdb
 
 ```golang
 import (
+    "context"
+    "encoding/json"
     "fmt"
     "log"
+    "net/http"
 
     "github.com/yyyoichi/hookdb"
 )
 
 func Example() {
     db := hookdb.New()
-    err := db.AppendHook([]byte("GAME100#ACT"), func(k, v []byte) (removeHook bool) {
-        fmt.Printf("%s: %s\n", k, v)
-        return false
+
+    http.HandleFunc("POST /game/{gameId}/actions", func(w http.ResponseWriter, r *http.Request) {
+        var requestBody struct {
+            Action string `json:"action"`
+        }
+        _ = json.NewDecoder(r.Body).Decode(&requestBody)
+
+        gameID := r.URL.Query().Get("gameId")
+        key := fmt.Sprintf("GAME%s#ACT", gameID)
+        err := db.Put([]byte(key), []byte(requestBody.Action))
+        if err != nil {
+            log.Fatal(err)
+        }
+        w.WriteHeader(http.StatusOK)
     })
-    if err != nil {
-        log.Fatal(err)
-    }
 
-    // exp hit  
-    err = db.Put([]byte("GAME100#ACT1"), []byte("PUNCH"))
-    if err != nil {
-        log.Fatal(err)
-    }
-    // exp hit
-    err = db.Put([]byte("GAME100#ACT2"), []byte("KICK"))
-    if err != nil {
-        log.Fatal(err)
-    }
-    // exp not hit
-    err = db.Put([]byte("GAME999#ACT1"), []byte("KICK"))
-    if err != nil {
-        log.Fatal(err)
-    }
+    // in other gorutin, subscribe to the key "GAME100#ACT" until the context is done
+    go func() {
+        ctx := context.Background()
+        event, err := db.Subscribe(ctx, []byte("GAME100#ACT"))
+        if err != nil {
+            log.Fatal(err)
+        }
+        for v := range event {
+            log.Println(string(v))
+        }
+    }()
 
-    // Output:
-    // GAME100#ACT1: PUNCH
-    // GAME100#ACT2: KICK
+    http.ListenAndServe(":8080", nil)
+
+    // curl -X POST -H "Content-Type: application/json" -d '{"action":"PUNCH"}' http://localhost:8080/game/100/actions
+    //  -> print: 'PUNCH'
 }
 
 ```
 
-[more...](https://github.com/yyyoichi/hookdb/blob/main/hookdb_test.go)
+[examples](https://pkg.go.dev/github.com/yyyoichi/hookdb#pkg-examples)
