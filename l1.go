@@ -140,7 +140,8 @@ func (s *l1BaseStore[T]) delete(in input[T]) (o output[T], err error) {
 	case in.i != 0:
 		k, found := s.keys[in.i]
 		if !found {
-			return o, ErrKeyNotFound
+			err = ErrKeyNotFound
+			break
 		}
 		o.key = k
 		o.i = in.i
@@ -149,6 +150,7 @@ func (s *l1BaseStore[T]) delete(in input[T]) (o output[T], err error) {
 		item, found := s.btree.Delete(&item{k: in.k})
 		if !found {
 			err = ErrKeyNotFound
+			break
 		}
 		o.key = in.k
 		o.i = item.i
@@ -156,7 +158,7 @@ func (s *l1BaseStore[T]) delete(in input[T]) (o output[T], err error) {
 		err = ErrEmptyEntry
 	}
 	if err != nil {
-		return o, err
+		return
 	}
 	o.deleted = true
 	o.val = s.vals[o.i]
