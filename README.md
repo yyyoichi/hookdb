@@ -9,6 +9,11 @@ This key-value store is a simple, lightweight, on-memory database. One of its un
 - HookHandler, Callback function triggered by put key
 - Deletion after HookHandler call
 - Transaction
+- Scription to key prefix events
+
+## Subscribe to Key Prefix Events
+
+HookDB allows you to subscribe to specific key prefixes and receive notifications whenever a key with the registered prefix is put into the database. This feature is useful for triggering custom logic based on specific key patterns.
 
 ## Install
 
