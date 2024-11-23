@@ -1,6 +1,7 @@
 package hookdb_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -305,5 +306,67 @@ func ExampleHookDB_TransactionWithLock() {
 
 	// Output:
 	// new-val
+
+}
+
+func ExampleDB_Query() {
+	db := hookdb.New()
+
+	err := db.Put([]byte("user01"), []byte("user01"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = db.Put([]byte("user02"), []byte("user02"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = db.Put([]byte("user03"), []byte("user03"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ctx := context.Background()
+	for v, err := range db.Query(ctx, []byte("user")) {
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(string(v))
+	}
+
+	// Output:
+	// user01
+	// user02
+	// user03
+
+}
+
+func ExampleDB_Query_withReverseQueryOption() {
+	db := hookdb.New()
+
+	err := db.Put([]byte("user01"), []byte("user01"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = db.Put([]byte("user02"), []byte("user02"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = db.Put([]byte("user03"), []byte("user03"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ctx := context.Background()
+	for v, err := range db.Query(ctx, []byte("user"), hookdb.WithReverseQuery()) {
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(string(v))
+	}
+
+	// Output:
+	// user03
+	// user02
+	// user01
 
 }
