@@ -370,3 +370,114 @@ func ExampleDB_Query_withReverseQueryOption() {
 	// user01
 
 }
+
+func ExampleDB_Subscribe() {
+	db := hookdb.New()
+
+	// 1. subscribe with persistent
+	// 2. put 3 orders
+	// 3. receive 3 orders and print
+	// 4. context done
+	//  	stop receive
+	// 5. put 1 order
+	// 6. no receive
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	event, err := db.Subscribe(ctx, []byte("order"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		var receiveCount int
+		for {
+			v, ok := <-event
+			if !ok {
+				break
+			}
+			fmt.Println(string(v))
+			receiveCount++
+			if receiveCount == 3 {
+				cancel()
+				break
+			}
+		}
+		// read all events if remaining in the channel
+		// in this case, no remaining events
+		// for range event {
+		// }
+	}()
+	err = db.Put([]byte("order1"), []byte("shoes"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = db.Put([]byte("order2"), []byte("hat"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = db.Put([]byte("order3"), []byte("gloves"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	<-ctx.Done()
+
+	err = db.Put([]byte("order4"), []byte("socks"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Output:
+	// shoes
+	// hat
+	// gloves
+
+}
+
+func ExampleDB_Subscribe_once() {
+	db := hookdb.New()
+
+	// 1. subscribe with once
+	// 2. put 3 orders
+	// 3. receive 1 order and print
+	// 4. put 1 order
+	// 5. no receive
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	event, err := db.Subscribe(ctx, []byte("order"), hookdb.WithOnceSubscription())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		for v := range event {
+			fmt.Println(string(v))
+		}
+		cancel()
+	}()
+	err = db.Put([]byte("order1"), []byte("shoes"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = db.Put([]byte("order2"), []byte("hat"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = db.Put([]byte("order3"), []byte("gloves"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = db.Put([]byte("order4"), []byte("socks"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	<-ctx.Done()
+
+	// Output:
+	// shoes
+
+}
