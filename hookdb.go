@@ -62,18 +62,21 @@ type (
 	}
 )
 
-func (db *DB) AppendHook(prefix []byte, fn HookHandler) error {
-	return db.l3.AppendHook(prefix, fn)
-}
-func (db *DB) Delete(k []byte) error {
-	return db.l3.Delete(k)
-}
 func (db *DB) Get(k []byte) ([]byte, error) {
 	return db.l3.Get(k)
 }
 func (db *DB) Put(k []byte, v []byte) error {
 	return db.l3.Put(k, v)
 }
+func (db *DB) Delete(k []byte) error {
+	return db.l3.Delete(k)
+}
 func (db *DB) Query(ctx context.Context, k []byte, opts ...QueryOption) iter.Seq2[[]byte, error] {
 	return db.l3.Query(ctx, k, opts...)
+}
+func (db *DB) AppendHook(prefix []byte, fn HookHandler) error {
+	return db.l3.AppendHook(prefix, fn)
+}
+func (db *DB) RemoveHook(prefix []byte) error {
+	return db.l3.RemoveHook(prefix)
 }
