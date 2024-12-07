@@ -44,7 +44,7 @@ func Example() {
         _ = json.NewDecoder(r.Body).Decode(&requestBody)
 
         gameID := r.URL.Query().Get("gameId")
-        key := fmt.Sprintf("GAME%s#ACT", gameID)
+        key := fmt.Sprintf("GAME%s#ACT%d", gameID, time.Now().UnixNano())
         err := db.Put([]byte(key), []byte(requestBody.Action))
         if err != nil {
             log.Fatal(err)
